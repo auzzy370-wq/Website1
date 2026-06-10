@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NeuroViz – Interactive 3D Human Brain</title>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <style>
+    /* ── Reset & Variables ── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg:        #000812;
+      --bg2:       #020e20;
+      --primary:   #00d4ff;
+      --secondary: #7b2ff7;
+      --accent:    #ff6b35;
+      --gold:      #ffcc00;
+      --text:      #cce0f0;
+      --muted:     #5a7a99;
+      --glass:     rgba(0, 18, 40, 0.72);
+      --border:    rgba(0, 212, 255, 0.18);
+      --border2:   rgba(123, 47, 247, 0.25);
+      --radius:    14px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', 'Inter', system-ui, sans-serif;
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--secondary); border-radius: 3px; }
+
+    /* ── Header ── */
+    #header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 200;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.9rem 2rem;
+      background: rgba(0, 8, 18, 0.82);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-size: 1.55rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: var(--primary);
+      text-shadow: 0 0 28px rgba(0, 212, 255, 0.65);
+      user-select: none;
+    }
+    .logo span { color: var(--secondary); }
+
+    nav { display: flex; gap: 2rem; align-items: center; }
+    nav a {
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 0.88rem;
+      letter-spacing: 0.06em;
+      font-weight: 500;
+      transition: color 0.25s, text-shadow 0.25s;
+    }
+    nav a:hover { color: var(--primary); text-shadow: 0 0 10px rgba(0,212,255,0.5); }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--secondary), var(--primary));
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1.4rem;
+      border-radius: 40px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.2s;
+      box-shadow: 0 0 20px rgba(123,47,247,0.45);
+    }
+    .btn-primary:hover { opacity: 0.85; transform: translateY(-1px); }
+
+    /* ── Hero / Canvas ── */
+    #hero {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #canvas-container {
+      position: absolute;
+      inset: 0;
+    }
+    #canvas-container canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* ── Stats Overlay ── */
+    #stats-overlay {
+      position: absolute;
+      top: 72px;
+      left: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.55rem;
+      z-index: 50;
+      pointer-events: none;
+    }
+    .stat-item {
+      background: var(--glass);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.42rem 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+    }
+    .stat-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 8px var(--primary);
+      animation: pulse-dot 2s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.75); }
+    }
+    .stat-value {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--primary);
+      text-shadow: 0 0 10px rgba(0,212,255,0.45);
+      min-width: 52px;
+      font-variant-numeric: tabular-nums;
+    }
+    .stat-label {
+      font-size: 0.7rem;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* ── Controls Panel ── */
+    #controls-panel {
+      position: absolute;
+      top: 72px;
+      right: 18px;
+      width: 272px;
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.35rem 1.4rem;
+      z-index: 50;
+    }
+    #controls-panel h3 {
+      font-size: 0.72rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--primary);
+      margin-bottom: 1.1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    #controls-panel h3::before {
+      content: '';
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 8px var(--primary);
+    }
+
+    .ctrl-group { margin-bottom: 1rem; }
+    .ctrl-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.79rem;
+      color: var(--muted);
+      margin-bottom: 0.38rem;
+      letter-spacing: 0.04em;
+    }
+    .ctrl-group label span { color: var(--primary); font-weight: 600; }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      height: 3px;
+      background: rgba(0, 212, 255, 0.14);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 13px; height: 13px;
+      border-radius: 50%;
+      background: var(--primary);
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(0,212,255,0.7);
+    }
+
+    .toggles-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.45rem;
+      margin-bottom: 1rem;
+    }
+    .toggle-label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.76rem;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0.3rem 0.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      transition: border-color 0.2s, color 0.2s;
+      user-select: none;
+    }
+    .toggle-label:hover { border-color: rgba(0,212,255,0.4); color: var(--text); }
+    .toggle-label input[type="checkbox"] { accent-color: var(--primary); width: 12px; height: 12px; }
+
+    .color-modes {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.38rem;
+      margin-top: 0.4rem;
+    }
+    .mode-btn {
+      background: rgba(0,212,255,0.05);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.33rem 0;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      transition: all 0.18s;
+    }
+    .mode-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .mode-btn.active {
+      background: rgba(0,212,255,0.14);
+      border-color: var(--primary);
+      color: var(--primary);
+      box-shadow: 0 0 10px rgba(0,212,255,0.18);
+    }
+
+    .action-btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+      margin-top: 0.3rem;
+    }
+    .action-btn {
+      background: linear-gradient(135deg, rgba(123,47,247,0.18), rgba(0,212,255,0.08));
+      color: var(--text);
+      border: 1px solid var(--border2);
+      border-radius: 8px;
+      padding: 0.55rem 0.3rem;
+      font-size: 0.73rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+    .action-btn:hover {
+      border-color: var(--primary);
+      background: rgba(0,212,255,0.13);
+      transform: translateY(-1px);
+    }
+    .action-btn.active {
+      background: rgba(255,107,53,0.18);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    /* ── Tooltip ── */
+    #tooltip {
+      position: fixed;
+      background: var(--glass);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.9rem 1.15rem;
+      max-width: 240px;
+      pointer-events: none;
+      z-index: 300;
+      transition: opacity 0.18s;
+    }
+    #tooltip.hidden { opacity: 0; }
+    #tooltip h4 {
+      font-size: 0.88rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+    }
+    #tooltip-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    #tooltip p { font-size: 0.77rem; color: var(--muted); line-height: 1.52; }
+    .tooltip-tag {
+      display: inline-block;
+      margin-top: 0.5rem;
+      font-size: 0.68rem;
+      color: var(--secondary);
+      border: 1px solid var(--border2);
+      border-radius: 20px;
+      padding: 0.1rem 0.55rem;
+      letter-spacing: 0.07em;
+    }
+
+    /* ── Canvas Hint ── */
+    #canvas-hint {
+      position: absolute;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.76rem;
+      color: var(--muted);
+      letter-spacing: 0.09em;
+      pointer-events: none;
+      white-space: nowrap;
+      animation: hint-fade 6s ease forwards;
+    }
+    @keyframes hint-fade { 0%,50% { opacity:0.65; } 100% { opacity:0.15; } }
+
+    /* ── Loading Screen ── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      transition: opacity 0.85s ease;
+    }
+    #loading.done { opacity: 0; pointer-events: none; }
+    .loader-logo {
+      font-size: 2.4rem;
+      font-weight: 800;
+      color: var(--primary);
+      text-shadow: 0 0 36px rgba(0,212,255,0.75);
+      letter-spacing: 0.14em;
+      margin-bottom: 2.2rem;
+    }
+    .loader-logo span { color: var(--secondary); }
+    .loader-bar-wrap {
+      width: 230px; height: 3px;
+      background: rgba(0,212,255,0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 1rem;
+    }
+    .loader-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--secondary), var(--primary));
+      border-radius: 2px;
+      animation: bar-fill 2.0s cubic-bezier(.4,0,.2,1) forwards;
+    }
+    @keyframes bar-fill { from { width: 0; } to { width: 100%; } }
+    .loader-text {
+      font-size: 0.76rem;
+      color: var(--muted);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      animation: blink 1.4s ease infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:.6;} 50%{opacity:.15;} }
+
+    /* ── Content Sections ── */
+    .section { padding: 6rem 2rem; max-width: 1200px; margin: 0 auto; }
+    .section-tag {
+      font-size: 0.71rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--primary);
+      margin-bottom: 0.8rem;
+      display: flex; align-items: center; gap: 0.6rem;
+    }
+    .section-tag::before {
+      content: ''; display: inline-block;
+      width: 24px; height: 1px; background: var(--primary);
+    }
+    .section-title {
+      font-size: clamp(1.8rem, 4vw, 3rem);
+      font-weight: 800;
+      line-height: 1.18;
+      margin-bottom: 1rem;
+      background: linear-gradient(135deg, #fff 0%, var(--primary) 55%, var(--secondary) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .section-sub {
+      font-size: 1.02rem;
+      color: var(--muted);
+      max-width: 640px;
+      margin-bottom: 3rem;
+      line-height: 1.72;
+    }
+
+    /* Cards */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+    }
+    .card {
+      background: rgba(0,18,40,0.5);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.8rem;
+      transition: border-color 0.3s, transform 0.3s, box-shadow 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: ''; position: absolute;
+      top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--secondary), var(--primary));
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .card:hover { border-color: rgba(0,212,255,0.38); transform: translateY(-5px); box-shadow: 0 14px 44px rgba(0,212,255,0.07); }
+    .card:hover::before { opacity: 1; }
+    .card-icon { font-size: 2rem; margin-bottom: 1rem; display: block; }
+    .card h3 { font-size: 1.08rem; font-weight: 700; color: var(--text); margin-bottom: 0.5rem; }
+    .card p  { font-size: 0.87rem; color: var(--muted); line-height: 1.66; }
+
+    /* Region Cards */
+    .regions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 1rem;
+    }
+    .region-card {
+      display: flex; align-items: flex-start; gap: 1rem;
+      background: rgba(0,18,40,0.45);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.1rem 1.3rem;
+      transition: all 0.22s;
+      cursor: pointer;
+    }
+    .region-card:hover { border-color: rgba(0,212,255,0.35); transform: translateX(5px); }
+    .region-dot {
+      width: 11px; height: 11px;
+      border-radius: 50%; flex-shrink: 0;
+      margin-top: 4px;
+    }
+    .region-card h4 { font-size: 0.92rem; font-weight: 700; color: var(--text); margin-bottom: 0.18rem; }
+    .region-card p  { font-size: 0.78rem; color: var(--muted); line-height: 1.48; }
+
+    /* Facts */
+    #facts-section { background: var(--bg2); }
+    .facts-inner { padding: 6rem 2rem; max-width: 1200px; margin: 0 auto; }
+    .facts-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 2.5rem;
+      text-align: center;
+    }
+    .fact-number {
+      font-size: clamp(2rem, 5vw, 3.4rem);
+      font-weight: 900;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      margin-bottom: 0.5rem;
+    }
+    .fact-label { font-size: 0.83rem; color: var(--muted); letter-spacing: 0.05em; }
+
+    .divider { height: 1px; background: linear-gradient(90deg,transparent,var(--border),transparent); margin: 0 2rem; }
+
+    /* Footer */
+    footer {
+      background: rgba(0,4,10,0.96);
+      border-top: 1px solid var(--border);
+      padding: 3rem 2rem;
+    }
+    .footer-inner {
+      max-width: 1200px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 1.5rem;
+    }
+    .footer-logo { font-size: 1.3rem; font-weight: 800; color: var(--primary); text-shadow: 0 0 18px rgba(0,212,255,0.4); }
+    .footer-logo span { color: var(--secondary); }
+    .footer-text { font-size: 0.8rem; color: var(--muted); line-height: 1.6; }
+    .badges { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+    .badge {
+      display: flex; align-items: center; gap: 0.35rem;
+      background: rgba(0,212,255,0.06);
+      border: 1px solid var(--border);
+      border-radius: 40px;
+      padding: 0.28rem 0.7rem;
+      font-size: 0.73rem; color: var(--muted);
+    }
+    .badge-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      nav { display: none; }
+      #controls-panel { width: calc(100vw - 36px); }
+      .color-modes { grid-template-columns: repeat(2,1fr); }
+      .action-btns  { grid-template-columns: 1fr; }
+      #canvas-hint  { display: none; }
+      .section { padding: 4rem 1.2rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Loading Screen -->
+<div id="loading">
+  <div class="loader-logo">Neuro<span>Viz</span></div>
+  <div class="loader-bar-wrap"><div class="loader-bar"></div></div>
+  <div class="loader-text">Initializing neural network…</div>
+</div>
+
+<!-- Header -->
+<header id="header">
+  <div class="logo">Neuro<span>Viz</span></div>
+  <nav>
+    <a href="#hero">Home</a>
+    <a href="#explore">Explore</a>
+    <a href="#how-it-works">Science</a>
+    <a href="#facts-section">Stats</a>
+    <a href="#about">About</a>
+  </nav>
+  <button class="btn-primary" id="hdr-simulate">⚡ Simulate</button>
+</header>
+
+<!-- ░░░░░░░░░░  HERO / 3-D CANVAS  ░░░░░░░░░░ -->
+<section id="hero">
+  <div id="canvas-container"></div>
+
+  <!-- Live Stats -->
+  <div id="stats-overlay">
+    <div class="stat-item">
+      <span class="stat-dot"></span>
+      <span class="stat-value" id="stat-neurons">—</span>
+      <span class="stat-label">Neurons</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-dot" style="background:var(--secondary);box-shadow:0 0 8px var(--secondary)"></span>
+      <span class="stat-value" id="stat-active">0</span>
+      <span class="stat-label">Active</span>
+    </div>
+    <div class="stat-item">
+      <span class="stat-dot" style="background:var(--accent);box-shadow:0 0 8px var(--accent)"></span>
+      <span class="stat-value" id="stat-fps">0</span>
+      <span class="stat-label">Firing/s</span>
+    </div>
+  </div>
+
+  <!-- Controls Panel -->
+  <div id="controls-panel">
+    <h3>Neural Controls</h3>
+
+    <div class="ctrl-group">
+      <label>Brain Opacity <span id="val-opacity">15%</span></label>
+      <input type="range" id="sl-opacity" min="0" max="55" value="15">
+    </div>
+
+    <div class="ctrl-group">
+      <label>Firing Intensity <span id="val-intensity">100%</span></label>
+      <input type="range" id="sl-intensity" min="10" max="350" value="100">
+    </div>
+
+    <div class="ctrl-group">
+      <label>Bloom Glow <span id="val-bloom">150%</span></label>
+      <input type="range" id="sl-bloom" min="20" max="500" value="150">
+    </div>
+
+    <div class="toggles-grid">
+      <label class="toggle-label"><input type="checkbox" id="tog-wire"> Wireframe</label>
+      <label class="toggle-label"><input type="checkbox" id="tog-neurons" checked> Neurons</label>
+      <label class="toggle-label"><input type="checkbox" id="tog-axons"   checked> Axons</label>
+      <label class="toggle-label"><input type="checkbox" id="tog-rotate"  checked> Auto-Rotate</label>
+    </div>
+
+    <div class="ctrl-group">
+      <label>Color Mode</label>
+      <div class="color-modes">
+        <button class="mode-btn active" data-mode="neural">Neural</button>
+        <button class="mode-btn"        data-mode="fire">Fire</button>
+        <button class="mode-btn"        data-mode="cosmic">Cosmic</button>
+        <button class="mode-btn"        data-mode="mono">Mono</button>
+      </div>
+    </div>
+
+    <div class="action-btns">
+      <button class="action-btn" id="btn-pulse">⚡ Pulse All</button>
+      <button class="action-btn" id="btn-fly">🎥 Fly-Through</button>
+    </div>
+  </div>
+
+  <!-- Region Tooltip -->
+  <div id="tooltip" class="hidden">
+    <h4>
+      <span id="tooltip-dot"></span>
+      <span id="tooltip-title">—</span>
+    </h4>
+    <p id="tooltip-info"></p>
+    <span class="tooltip-tag" id="tooltip-tag"></span>
+  </div>
+
+  <div id="canvas-hint">Drag to rotate &nbsp;·&nbsp; Scroll to zoom &nbsp;·&nbsp; Click to explore regions</div>
+</section>
+
+<!-- ░░░░░░░░░░  EXPLORE REGIONS  ░░░░░░░░░░ -->
+<section id="explore" style="background:var(--bg2);">
+  <div class="section">
+    <div class="section-tag">Interactive Map</div>
+    <h2 class="section-title">Explore Brain Regions</h2>
+    <p class="section-sub">Click any card — or click directly in the 3D view — to trigger a localized neural storm in that brain region.</p>
+    <div class="regions-grid" id="regions-grid"></div>
+  </div>
+</section>
+
+<!-- ░░░░░░░░░░  HOW IT WORKS  ░░░░░░░░░░ -->
+<section id="how-it-works">
+  <div class="section">
+    <div class="section-tag">Neuroscience</div>
+    <h2 class="section-title">How Neural Signaling Works</h2>
+    <p class="section-sub">Every thought, memory, and sensation emerges from billions of electrochemical pulses racing through the most complex structure in the known universe.</p>
+    <div class="cards-grid">
+      <div class="card">
+        <span class="card-icon">🧬</span>
+        <h3>The Neuron</h3>
+        <p>Neurons are specialized cells with a soma (cell body), branching dendrites that receive incoming signals, and a long axon that transmits electrical impulses at speeds up to 120 m/s.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">⚡</span>
+        <h3>Action Potentials</h3>
+        <p>When inputs exceed a threshold, a rapid all-or-nothing depolarization wave—an action potential—fires along the axon. This spike is the fundamental unit of neural communication.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">🔗</span>
+        <h3>Synaptic Transmission</h3>
+        <p>At each synapse, electrical signals convert to chemical messages. Neurotransmitters cross the synaptic cleft and bind to receptors, propagating the signal onward through the network.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">🌐</span>
+        <h3>Connectomes</h3>
+        <p>Neurons form dense, dynamic networks. The human brain's ~86 billion neurons create roughly 100 trillion synaptic connections — more than the stars in 1,000 Milky Way galaxies.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">🔄</span>
+        <h3>Neuroplasticity</h3>
+        <p>The brain continuously rewires itself. Synaptic connections strengthen through repeated activation (LTP) and weaken through disuse — the cellular basis of all learning and memory.</p>
+      </div>
+      <div class="card">
+        <span class="card-icon">🌊</span>
+        <h3>Neural Oscillations</h3>
+        <p>Neurons fire in coordinated rhythmic patterns — theta, alpha, beta, and gamma waves. These synchronized oscillations bind distant regions and are thought to underlie consciousness itself.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ░░░░░░░░░░  FACTS  ░░░░░░░░░░ -->
+<div class="divider"></div>
+<section id="facts-section">
+  <div class="facts-inner">
+    <div class="section-tag">By the Numbers</div>
+    <h2 class="section-title" style="margin-bottom:3rem;">The Brain in Numbers</h2>
+    <div class="facts-grid">
+      <div><div class="fact-number">86B</div>   <div class="fact-label">Neurons in the human brain</div></div>
+      <div><div class="fact-number">100T</div>  <div class="fact-label">Synaptic connections</div></div>
+      <div><div class="fact-number">120 m/s</div><div class="fact-label">Peak nerve signal speed</div></div>
+      <div><div class="fact-number">1.4 kg</div><div class="fact-label">Average brain mass</div></div>
+      <div><div class="fact-number">20%</div>   <div class="fact-label">Body's energy consumed</div></div>
+      <div><div class="fact-number">2.5 PB</div><div class="fact-label">Estimated storage capacity</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ░░░░░░░░░░  ABOUT  ░░░░░░░░░░ -->
+<div class="divider"></div>
+<section id="about">
+  <div class="section" style="text-align:center;padding-bottom:4rem;">
+    <div class="section-tag" style="justify-content:center;">About</div>
+    <h2 class="section-title" style="text-align:center;">Built for Curiosity</h2>
+    <p class="section-sub" style="margin:0 auto 1.5rem;">
+      NeuroViz renders a real-time interactive 3D brain, procedurally generating thousands of neurons, curved axonal connections, and traveling signal pulses — entirely in your browser with modern WebGL.
+    </p>
+    <p style="font-size:0.82rem;color:var(--muted);">Drag · Zoom · Click · Explore &nbsp;—&nbsp; The universe within.</p>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="footer-inner">
+    <div>
+      <div class="footer-logo">Neuro<span>Viz</span></div>
+      <div class="footer-text" style="margin-top:0.4rem;">Interactive 3D neuroscience visualization</div>
+    </div>
+    <div class="footer-text" style="text-align:center;">
+      Procedurally generated · Real-time WebGL 2<br>
+      <span style="font-size:.72rem;opacity:.45;">Educational purposes · No external model assets required</span>
+    </div>
+    <div class="badges">
+      <div class="badge"><span class="badge-dot" style="background:#00d4ff"></span>Three.js r158</div>
+      <div class="badge"><span class="badge-dot" style="background:#ff6b35"></span>WebGL 2.0</div>
+      <div class="badge"><span class="badge-dot" style="background:#7b2ff7"></span>GLSL Shaders</div>
+    </div>
+  </div>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════════
+     THREE.JS APPLICATION
+════════════════════════════════════════════════════════════ -->
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer }  from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass }      from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass }      from 'three/addons/postprocessing/OutputPass.js';
+
+/* ══════════════════════════════════
+   PERLIN NOISE  (classic 3-D)
+══════════════════════════════════ */
+const _p = (() => {
+  const a = Array.from({length:256},(_,i)=>i);
+  for (let i=255;i>0;i--) { const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  const b = new Uint8Array(512);
+  for (let i=0;i<512;i++) b[i]=a[i&255];
+  return b;
+})();
+function _fade(t){return t*t*t*(t*(t*6-15)+10);}
+function _lerp(a,b,t){return a+t*(b-a);}
+function _grad(h,x,y,z){const hh=h&15,u=hh<8?x:y,v=hh<4?y:hh===12||hh===14?x:z;return((hh&1)?-u:u)+((hh&2)?-v:v);}
+function perlin(x,y,z){
+  const X=Math.floor(x)&255,Y=Math.floor(y)&255,Z=Math.floor(z)&255;
+  x-=Math.floor(x); y-=Math.floor(y); z-=Math.floor(z);
+  const u=_fade(x),v=_fade(y),w=_fade(z);
+  const A=_p[X]+Y,AA=_p[A]+Z,AB=_p[A+1]+Z,B=_p[X+1]+Y,BA=_p[B]+Z,BB=_p[B+1]+Z;
+  return _lerp(
+    _lerp(_lerp(_grad(_p[AA],x,y,z),   _grad(_p[BA],x-1,y,z),   u),
+          _lerp(_grad(_p[AB],x,y-1,z), _grad(_p[BB],x-1,y-1,z), u),v),
+    _lerp(_lerp(_grad(_p[AA+1],x,y,z-1),   _grad(_p[BA+1],x-1,y,z-1),   u),
+          _lerp(_grad(_p[AB+1],x,y-1,z-1), _grad(_p[BB+1],x-1,y-1,z-1), u),v),w);
+}
+function fbm(x,y,z,oct=4){let v=0,a=0.5,f=1;for(let i=0;i<oct;i++){v+=perlin(x*f,y*f,z*f)*a;a*=0.5;f*=2.1;}return v;}
+
+/* ══════════════════════════════════
+   CONFIG
+══════════════════════════════════ */
+const MOBILE = window.innerWidth < 768;
+const CFG = {
+  N:          MOBILE ? 500  : 1500,   // total neuron count
+  K:          MOBILE ? 3   : 4,       // axon connections per neuron
+  ASEGS:      5,                      // bezier segments per axon
+  NDEND:      5,                      // dendrites per neuron
+  FIRE_PROB:  0.0055,                 // spontaneous fire chance per frame
+  DECAY:      0.965,                  // activity decay per frame
+  P_SPEED:    0.85,                   // pulse travel speed (units/s)
+  MAX_P:      MOBILE ? 60 : 220,      // max simultaneous signal pulses
+};
+
+/* ══════════════════════════════════
+   BRAIN REGIONS
+══════════════════════════════════ */
+const REGIONS = [
+  {name:'Prefrontal Cortex', pos:new THREE.Vector3(0.1,1.2,1.9),  color:'#00d4ff', tag:'Executive Function',  info:'Decision-making, planning, personality expression, and moderating complex social behavior.'},
+  {name:'Motor Cortex',      pos:new THREE.Vector3(0.0,2.0,0.5),  color:'#00ff99', tag:'Voluntary Movement',  info:'Controls fine and gross voluntary motor movements throughout the entire body.'},
+  {name:'Somatosensory',     pos:new THREE.Vector3(0.0,2.0,-0.5), color:'#88ffcc', tag:'Touch & Pain',        info:'Processes tactile information: touch, pressure, temperature, and pain sensations.'},
+  {name:'Parietal Lobe',     pos:new THREE.Vector3(0.0,1.8,-1.1), color:'#7b2ff7', tag:'Spatial Awareness',   info:'Integrates multisensory information; governs spatial orientation and body awareness.'},
+  {name:'Occipital Lobe',    pos:new THREE.Vector3(0.0,0.5,-2.2), color:'#ff6b35', tag:'Visual Processing',   info:'Primary visual cortex — interprets signals from the eyes into the images we perceive.'},
+  {name:'Temporal Lobe',     pos:new THREE.Vector3(2.1,0.2,0.0),  color:'#ffcc00', tag:'Language & Memory',   info:'Processes auditory input, language comprehension (Wernicke\'s area), and semantic memory.'},
+  {name:'Hippocampus',       pos:new THREE.Vector3(1.5,-0.6,0.2), color:'#ff44aa', tag:'Memory Formation',    info:'Critical for consolidating new long-term memories and spatial navigation. First target in Alzheimer\'s.'},
+  {name:'Amygdala',          pos:new THREE.Vector3(1.6,-0.9,0.8), color:'#ff2200', tag:'Emotion & Fear',      info:'Emotional processing hub — triggers fight-or-flight and encodes emotionally charged memories.'},
+  {name:'Cerebellum',        pos:new THREE.Vector3(0.0,-2.0,-1.8),color:'#44ffbb', tag:'Coordination',        info:'Fine-tunes motor precision and balance. Contains over half of all neurons in the human brain.'},
+  {name:'Broca\'s Area',     pos:new THREE.Vector3(-1.8,0.6,1.2), color:'#aaaaff', tag:'Speech Production',   info:'Governs speech articulation and language production. Damage leads to expressive aphasia.'},
+  {name:'Thalamus',          pos:new THREE.Vector3(0.0,0.1,0.0),  color:'#ffffff', tag:'Sensory Relay',       info:'The brain\'s central relay station — routes all incoming sensory signals to the cortex.'},
+  {name:'Brain Stem',        pos:new THREE.Vector3(0.0,-2.6,-0.4),color:'#88aaff', tag:'Vital Functions',     info:'Controls breathing, heart rate, blood pressure, and wakefulness. Connects brain to spinal cord.'},
+];
+
+/* ══════════════════════════════════
+   COLOR PALETTES
+══════════════════════════════════ */
+const PALETTES = {
+  neural:{
+    resting:new THREE.Color(0x001633), active:new THREE.Color(0x0088cc),
+    firing: new THREE.Color(0x00ddff), peak:  new THREE.Color(0xffffff),
+    axon:   new THREE.Color(0x001122), axonAct:new THREE.Color(0x006699),
+    pulse:  new THREE.Color(0xff7700), brain: new THREE.Color(0x0d2a44),
+    wire:   new THREE.Color(0x002244), bg:    new THREE.Color(0x000812),
+  },
+  fire:{
+    resting:new THREE.Color(0x220000), active: new THREE.Color(0xcc2200),
+    firing: new THREE.Color(0xff6600), peak:   new THREE.Color(0xffff00),
+    axon:   new THREE.Color(0x150000), axonAct:new THREE.Color(0x991100),
+    pulse:  new THREE.Color(0xffffff), brain:  new THREE.Color(0x1e0d00),
+    wire:   new THREE.Color(0x280a00), bg:     new THREE.Color(0x070000),
+  },
+  cosmic:{
+    resting:new THREE.Color(0x0d0022), active: new THREE.Color(0x8800cc),
+    firing: new THREE.Color(0xdd00ff), peak:   new THREE.Color(0x00ffff),
+    axon:   new THREE.Color(0x0a0018), axonAct:new THREE.Color(0x6600aa),
+    pulse:  new THREE.Color(0xffd700), brain:  new THREE.Color(0x180030),
+    wire:   new THREE.Color(0x1e0040), bg:     new THREE.Color(0x03000e),
+  },
+  mono:{
+    resting:new THREE.Color(0x111111), active: new THREE.Color(0x666666),
+    firing: new THREE.Color(0xbbbbbb), peak:   new THREE.Color(0xffffff),
+    axon:   new THREE.Color(0x0a0a0a), axonAct:new THREE.Color(0x444444),
+    pulse:  new THREE.Color(0xffffff), brain:  new THREE.Color(0x282828),
+    wire:   new THREE.Color(0x181818), bg:     new THREE.Color(0x040404),
+  },
+};
+let pal = PALETTES.neural;
+let colorMode = 'neural';
+
+/* ══════════════════════════════════
+   STATE
+══════════════════════════════════ */
+let fireIntensity = 1.0;
+let isFly = false, flyT = 0;
+let fireCount = 0, fireTimer = 0;
+
+/* ══════════════════════════════════
+   RENDERER / SCENE / CAMERA
+══════════════════════════════════ */
+const container = document.getElementById('canvas-container');
+const W = ()=>container.clientWidth, H = ()=>container.clientHeight;
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(W(), H());
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+container.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = pal.bg.clone();
+
+const camera = new THREE.PerspectiveCamera(55, W()/H(), 0.05, 200);
+camera.position.set(0, 1.6, 7.8);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping    = true;
+controls.dampingFactor    = 0.045;
+controls.minDistance      = 3.5;
+controls.maxDistance      = 20;
+controls.autoRotate       = true;
+controls.autoRotateSpeed  = 0.22;
+
+/* ══════════════════════════════════
+   POST-PROCESSING
+══════════════════════════════════ */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+
+const bloom = new UnrealBloomPass(new THREE.Vector2(W(),H()), 1.5, 0.55, 0.08);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+/* ══════════════════════════════════
+   LIGHTS
+══════════════════════════════════ */
+scene.add(new THREE.AmbientLight(0x001133, 1.8));
+const kL = new THREE.PointLight(0x0077cc, 4.5, 32); kL.position.set(4,4,4);   scene.add(kL);
+const fL = new THREE.PointLight(0x7b2ff7, 3.0, 28); fL.position.set(-4,-2,-4);scene.add(fL);
+const rL = new THREE.PointLight(0xff6b35, 1.5, 16); rL.position.set(0,-4, 2); scene.add(rL);
+
+/* ══════════════════════════════════
+   BACKGROUND STARS
+══════════════════════════════════ */
+{
+  const N=4500, sp=new Float32Array(N*3), sc=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const r=55+Math.random()*90, th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+    sp[i*3]=r*Math.sin(ph)*Math.cos(th); sp[i*3+1]=r*Math.sin(ph)*Math.sin(th); sp[i*3+2]=r*Math.cos(ph);
+    const b=0.12+Math.random()*0.65;
+    const c=new THREE.Color().setHSL(Math.random()*0.15+0.55, 0.35, b);
+    sc[i*3]=c.r; sc[i*3+1]=c.g; sc[i*3+2]=c.b;
+  }
+  const sg=new THREE.BufferGeometry();
+  sg.setAttribute('position',new THREE.BufferAttribute(sp,3));
+  sg.setAttribute('color',   new THREE.BufferAttribute(sc,3));
+  scene.add(new THREE.Points(sg, new THREE.PointsMaterial({size:0.11,vertexColors:true,sizeAttenuation:true,transparent:true,opacity:0.8})));
+}
+
+/* ══════════════════════════════════
+   BRAIN GEOMETRY  (displaced sphere)
+══════════════════════════════════ */
+function buildBrainGeo(radius, segs, freq, amp) {
+  const geo = new THREE.SphereGeometry(radius, segs, segs);
+  const pos = geo.attributes.position;
+  for (let i=0; i<pos.count; i++) {
+    const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+    const r=Math.sqrt(x*x+y*y+z*z);
+    const nx=x/r, ny=y/r, nz=z/r;
+    // layered noise: fine folds + coarse lobes
+    const fold = fbm(nx*freq, ny*freq, nz*freq, 5) * amp;
+    const lobe = fbm(nx*1.3,  ny*1.3,  nz*1.3,  2) * 0.1;
+    // flatten bottom, slight front-back elongation
+    const fy = 1 - Math.max(0,-ny)*0.16;
+    const fz = 1 + nz*nz*0.07;
+    const nr = r*(1+fold+lobe)*fy*fz;
+    pos.setXYZ(i, nx*nr, ny*nr, nz*nr);
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
+const brainGroup = new THREE.Group();
+scene.add(brainGroup);
+
+const brainMat = new THREE.MeshPhysicalMaterial({
+  color: pal.brain, transparent:true, opacity:0.15,
+  roughness:0.88, metalness:0.05, side:THREE.DoubleSide, depthWrite:false,
+});
+const brainMesh = new THREE.Mesh(buildBrainGeo(2.4, 128, 3.0, 0.27), brainMat);
+brainMesh.rotation.x = -0.07;
+brainGroup.add(brainMesh);
+
+// Wireframe layer
+const wireMat = new THREE.MeshBasicMaterial({
+  color: pal.wire, wireframe:true, transparent:true, opacity:0.07, depthWrite:false,
+});
+const wireMesh = new THREE.Mesh(buildBrainGeo(2.42, 64, 3.0, 0.27), wireMat);
+wireMesh.rotation.x = -0.07;
+wireMesh.visible = false;
+brainGroup.add(wireMesh);
+
+// Inner ambient glow
+const igMat = new THREE.MeshBasicMaterial({
+  color:0x001e40, transparent:true, opacity:0.12, side:THREE.BackSide, depthWrite:false,
+});
+brainGroup.add(new THREE.Mesh(new THREE.SphereGeometry(2.1,32,32), igMat));
+
+// Cerebellum
+const cbMat = brainMat.clone();
+const cbMesh = new THREE.Mesh(buildBrainGeo(0.82, 48, 5.5, 0.14), cbMat);
+cbMesh.position.set(0,-1.4,-1.55); cbMesh.scale.set(1.22,0.85,1.05);
+brainGroup.add(cbMesh);
+
+// Brainstem
+const bsMat = brainMat.clone();
+const bsMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.21,0.17,1.1,16), bsMat);
+bsMesh.position.set(0,-2.6,-0.38); bsMesh.rotation.x = 0.18;
+brainGroup.add(bsMesh);
+
+/* ══════════════════════════════════
+   NEURON POSITIONS
+══════════════════════════════════ */
+function randInEllipsoid(ax,ay,az){
+  while(true){
+    const x=(Math.random()-.5)*2*ax, y=(Math.random()-.5)*2*ay, z=(Math.random()-.5)*2*az;
+    if(x*x/ax/ax+y*y/ay/ay+z*z/az/az<0.9) return new THREE.Vector3(x,y,z);
+  }
+}
+
+const neurons = [];
+for(let i=0;i<CFG.N;i++){
+  neurons.push({ pos:randInEllipsoid(2.05,1.72,1.98), activity:0, conns:[], connAx:[] });
+}
+
+// K-nearest connections
+console.log(`NeuroViz: wiring ${CFG.N} neurons…`);
+for(let i=0;i<CFG.N;i++){
+  const dists=[];
+  for(let j=0;j<CFG.N;j++){ if(j!==i) dists.push({j, d:neurons[i].pos.distanceToSquared(neurons[j].pos)}); }
+  dists.sort((a,b)=>a.d-b.d);
+  neurons[i].conns = dists.slice(0,CFG.K).map(x=>x.j);
+}
+
+/* ══════════════════════════════════
+   DENDRITE GEOMETRY  (static)
+══════════════════════════════════ */
+const dv=[], dc=[];
+for(let i=0;i<CFG.N;i++){
+  const p=neurons[i].pos;
+  for(let d=0;d<CFG.NDEND;d++){
+    const phi=Math.random()*Math.PI*2, th=Math.acos(2*Math.random()-1);
+    const dx=Math.sin(th)*Math.cos(phi), dy=Math.sin(th)*Math.sin(phi), dz=Math.cos(th);
+    const len=0.11+Math.random()*0.21;
+    const ex=p.x+dx*len, ey=p.y+dy*len, ez=p.z+dz*len;
+    dv.push(p.x,p.y,p.z, ex,ey,ez);
+    dc.push(0,0.18,0.32, 0,0.06,0.14);
+    // optional branch
+    if(Math.random()>.5){
+      const bx=p.x+dx*len*.6, by=p.y+dy*len*.6, bz=p.z+dz*len*.6;
+      const bp=phi+(Math.random()-.5)*1.9, bt=th+(Math.random()-.5)*1.1;
+      const bl=len*.42;
+      dv.push(bx,by,bz, bx+Math.sin(bt)*Math.cos(bp)*bl, by+Math.sin(bt)*Math.sin(bp)*bl, bz+Math.cos(bt)*bl);
+      dc.push(0,0.1,0.2, 0,0.03,0.08);
+    }
+  }
+}
+const dendGeo = new THREE.BufferGeometry();
+dendGeo.setAttribute('position',new THREE.Float32BufferAttribute(dv,3));
+dendGeo.setAttribute('color',   new THREE.Float32BufferAttribute(dc,3));
+const dendLines = new THREE.LineSegments(dendGeo,
+  new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.5,depthWrite:false}));
+scene.add(dendLines);
+
+/* ══════════════════════════════════
+   AXON GEOMETRY  (dynamic vertex colors)
+══════════════════════════════════ */
+const axonList = [];
+const axonMap  = new Map();   // "min-max" -> index
+
+for(let i=0;i<CFG.N;i++){
+  for(const j of neurons[i].conns){
+    const key = i<j?`${i}-${j}`:`${j}-${i}`;
+    if(!axonMap.has(key)){
+      const pi=neurons[i].pos, pj=neurons[j].pos;
+      const mid=pi.clone().add(pj).multiplyScalar(0.5).add(
+        new THREE.Vector3((Math.random()-.5)*.65,(Math.random()-.5)*.65,(Math.random()-.5)*.65));
+      // sample quadratic bezier into CFG.ASEGS+1 points
+      const pts=[];
+      for(let s=0;s<=CFG.ASEGS;s++){
+        const t=s/CFG.ASEGS, mt=1-t;
+        pts.push(new THREE.Vector3(
+          mt*mt*pi.x+2*mt*t*mid.x+t*t*pj.x,
+          mt*mt*pi.y+2*mt*t*mid.y+t*t*pj.y,
+          mt*mt*pi.z+2*mt*t*mid.z+t*t*pj.z));
+      }
+      const idx=axonList.length;
+      axonList.push({from:i, to:j, pts});
+      axonMap.set(key,idx);
+      neurons[i].connAx.push(idx);
+      neurons[j].connAx.push(idx);
+    }
+  }
+}
+
+const ATOT = axonList.length*CFG.ASEGS*2;
+const axPosArr = new Float32Array(ATOT*3);
+const axColArr = new Float32Array(ATOT*3);
+
+for(let a=0;a<axonList.length;a++){
+  const pts=axonList[a].pts, base=a*CFG.ASEGS*2;
+  for(let s=0;s<CFG.ASEGS;s++){
+    const p0=pts[s],p1=pts[s+1], vi=(base+s*2)*3;
+    axPosArr[vi]=p0.x;   axPosArr[vi+1]=p0.y;   axPosArr[vi+2]=p0.z;
+    axPosArr[vi+3]=p1.x; axPosArr[vi+4]=p1.y;   axPosArr[vi+5]=p1.z;
+    axColArr[vi]=pal.axon.r; axColArr[vi+1]=pal.axon.g; axColArr[vi+2]=pal.axon.b;
+    axColArr[vi+3]=pal.axon.r;axColArr[vi+4]=pal.axon.g;axColArr[vi+5]=pal.axon.b;
+  }
+}
+
+const axGeo = new THREE.BufferGeometry();
+axGeo.setAttribute('position',new THREE.BufferAttribute(axPosArr,3));
+axGeo.setAttribute('color',   new THREE.BufferAttribute(axColArr,3));
+const axLines = new THREE.LineSegments(axGeo,
+  new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.6,depthWrite:false}));
+scene.add(axLines);
+
+/* ══════════════════════════════════
+   SOMA (InstancedMesh)
+══════════════════════════════════ */
+const somaGeo  = new THREE.SphereGeometry(0.04, 7, 7);
+const somaMat  = new THREE.MeshBasicMaterial({color:0xffffff});
+const somaMesh = new THREE.InstancedMesh(somaGeo, somaMat, CFG.N);
+somaMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+const _dummy = new THREE.Object3D();
+for(let i=0;i<CFG.N;i++){
+  _dummy.position.copy(neurons[i].pos);
+  _dummy.updateMatrix();
+  somaMesh.setMatrixAt(i, _dummy.matrix);
+  somaMesh.setColorAt(i, pal.resting);
+}
+somaMesh.instanceMatrix.needsUpdate = true;
+somaMesh.instanceColor.needsUpdate  = true;
+scene.add(somaMesh);
+
+/* ══════════════════════════════════
+   SIGNAL PULSES  (traveling Points)
+══════════════════════════════════ */
+const pulses      = [];
+const pulPosArr   = new Float32Array(CFG.MAX_P*3);
+const pulColArr   = new Float32Array(CFG.MAX_P*3);
+for(let i=0;i<CFG.MAX_P;i++) pulPosArr[i*3+1]=-9999;
+
+const pulGeo = new THREE.BufferGeometry();
+pulGeo.setAttribute('position',new THREE.BufferAttribute(pulPosArr,3));
+pulGeo.setAttribute('color',   new THREE.BufferAttribute(pulColArr,3));
+const pulMesh = new THREE.Points(pulGeo,
+  new THREE.PointsMaterial({size:0.17,vertexColors:true,sizeAttenuation:true,transparent:true,opacity:0.95,depthWrite:false}));
+scene.add(pulMesh);
+
+/* ══════════════════════════════════
+   REGION HIT-TARGETS  (invisible)
+══════════════════════════════════ */
+const hitTargets=[];
+for(const r of REGIONS){
+  const m=new THREE.Mesh(
+    new THREE.SphereGeometry(0.24,8,8),
+    new THREE.MeshBasicMaterial({visible:false})
+  );
+  m.position.copy(r.pos);
+  m.userData=r;
+  scene.add(m);
+  hitTargets.push(m);
+}
+
+/* ══════════════════════════════════
+   BUILD REGION CARDS IN DOM
+══════════════════════════════════ */
+const regGrid=document.getElementById('regions-grid');
+for(const r of REGIONS){
+  const card=document.createElement('div');
+  card.className='region-card';
+  card.innerHTML=`<span class="region-dot" style="background:${r.color};box-shadow:0 0 8px ${r.color}"></span>
+    <div><h4>${r.name}</h4><p>${r.info}</p></div>`;
+  card.addEventListener('click',()=>triggerRegion(r));
+  regGrid.appendChild(card);
+}
+
+/* ══════════════════════════════════
+   FIRING LOGIC
+══════════════════════════════════ */
+function fireNeuron(idx, str=1.0){
+  neurons[idx].activity = Math.min(1.0, neurons[idx].activity+str);
+  fireCount++;
+  for(let ci=0;ci<neurons[idx].conns.length;ci++){
+    if(pulses.length>=CFG.MAX_P) break;
+    const tgt=neurons[idx].conns[ci];
+    const axIdx=neurons[idx].connAx[ci];
+    if(axIdx===undefined) continue;
+    const ax=axonList[axIdx];
+    if(!ax) continue;
+    pulses.push({ax, prog:0, tgt, fwd:ax.from===idx, spd:CFG.P_SPEED*(0.7+Math.random()*.6), str:str*0.6});
+  }
+}
+
+function triggerRegion(r){
+  let burst=0;
+  for(let i=0;i<CFG.N;i++){
+    if(neurons[i].pos.distanceTo(r.pos)<1.05)
+      setTimeout(()=>fireNeuron(i,0.85+Math.random()*.15), burst++*35);
+  }
+}
+
+function pulseAll(){
+  for(let i=0;i<CFG.N;i++)
+    setTimeout(()=>fireNeuron(i,1.0), Math.random()*2000);
+}
+
+/* ══════════════════════════════════
+   FLY-THROUGH CAMERA PATH
+══════════════════════════════════ */
+const flyPath = [
+  new THREE.Vector3(0,1.6,7.8),  new THREE.Vector3(5,2.5,4),
+  new THREE.Vector3(3,-1.5,-3),  new THREE.Vector3(-5,1.5,2),
+  new THREE.Vector3(0,5,1.5),    new THREE.Vector3(-2,0.5,7),
+  new THREE.Vector3(0,1.6,7.8),
+];
+const flyCurve = new THREE.CatmullRomCurve3(flyPath);
+
+/* ══════════════════════════════════
+   RAYCASTING / TOOLTIP
+══════════════════════════════════ */
+const raycaster=new THREE.Raycaster();
+const mouse=new THREE.Vector2(-9,-9);
+const tooltip   =document.getElementById('tooltip');
+const tipTitle  =document.getElementById('tooltip-title');
+const tipInfo   =document.getElementById('tooltip-info');
+const tipDot    =document.getElementById('tooltip-dot');
+const tipTag    =document.getElementById('tooltip-tag');
+let hoveredReg  =null;
+
+renderer.domElement.addEventListener('mousemove', e=>{
+  const rect=renderer.domElement.getBoundingClientRect();
+  mouse.x= ((e.clientX-rect.left)/rect.width )*2-1;
+  mouse.y=-((e.clientY-rect.top) /rect.height)*2+1;
+  tooltip.style.left=(e.clientX+16)+'px';
+  tooltip.style.top =(e.clientY-16)+'px';
+});
+
+renderer.domElement.addEventListener('click', ()=>{
+  if(hoveredReg) triggerRegion(hoveredReg);
+});
+
+/* ══════════════════════════════════
+   COLOR MODE REFRESH
+══════════════════════════════════ */
+const _tc=new THREE.Color();
+
+function applyPalette(){
+  pal=PALETTES[colorMode];
+  scene.background.copy(pal.bg);
+  brainMat.color.copy(pal.brain);
+  cbMat.color.copy(pal.brain);
+  bsMat.color.copy(pal.brain);
+  wireMat.color.copy(pal.wire);
+  igMat.color.setHex(colorMode==='mono'?0x111111:colorMode==='fire'?0x150500:colorMode==='cosmic'?0x100020:0x001e40);
+  // reset axon colors
+  for(let a=0;a<axonList.length;a++){
+    const base=a*CFG.ASEGS*2;
+    for(let s=0;s<CFG.ASEGS;s++){
+      const vi=(base+s*2)*3;
+      axColArr[vi]=pal.axon.r;  axColArr[vi+1]=pal.axon.g;  axColArr[vi+2]=pal.axon.b;
+      axColArr[vi+3]=pal.axon.r;axColArr[vi+4]=pal.axon.g;  axColArr[vi+5]=pal.axon.b;
+    }
+  }
+  axGeo.attributes.color.needsUpdate=true;
+  for(let i=0;i<CFG.N;i++) somaMesh.setColorAt(i,pal.resting);
+  somaMesh.instanceColor.needsUpdate=true;
+}
+
+/* ══════════════════════════════════
+   UI BINDINGS
+══════════════════════════════════ */
+function bindSlider(id, labelId, cb){
+  const el=document.getElementById(id);
+  el.addEventListener('input',function(){
+    document.getElementById(labelId).textContent=this.value+'%';
+    cb(+this.value);
+  });
+}
+
+bindSlider('sl-opacity',  'val-opacity',  v=>{ brainMat.opacity=v/100; cbMat.opacity=v/100; bsMat.opacity=v/100; });
+bindSlider('sl-intensity','val-intensity',v=>{ fireIntensity=v/100; });
+bindSlider('sl-bloom',    'val-bloom',    v=>{ bloom.strength=v/100; });
+
+document.getElementById('tog-wire').addEventListener('change',   function(){ wireMesh.visible=this.checked; });
+document.getElementById('tog-neurons').addEventListener('change', function(){ somaMesh.visible=dendLines.visible=this.checked; });
+document.getElementById('tog-axons').addEventListener('change',   function(){ axLines.visible=this.checked; });
+document.getElementById('tog-rotate').addEventListener('change',  function(){ controls.autoRotate=this.checked; });
+
+document.querySelectorAll('.mode-btn').forEach(b=>b.addEventListener('click',function(){
+  document.querySelectorAll('.mode-btn').forEach(x=>x.classList.remove('active'));
+  this.classList.add('active');
+  colorMode=this.dataset.mode;
+  applyPalette();
+}));
+
+const btnPulse=document.getElementById('btn-pulse');
+btnPulse.addEventListener('click',()=>{
+  pulseAll();
+  btnPulse.textContent='⚡ Pulsing…';
+  setTimeout(()=>btnPulse.textContent='⚡ Pulse All', 2400);
+});
+
+const btnFly=document.getElementById('btn-fly');
+btnFly.addEventListener('click',()=>{
+  isFly=!isFly; flyT=0;
+  controls.autoRotate=!isFly;
+  btnFly.textContent=isFly?'⏹ Stop Fly':'🎥 Fly-Through';
+  btnFly.classList.toggle('active',isFly);
+  document.getElementById('tog-rotate').checked=!isFly;
+});
+
+document.getElementById('hdr-simulate').addEventListener('click',()=>btnPulse.click());
+
+/* ══════════════════════════════════
+   ANIMATION LOOP
+══════════════════════════════════ */
+let lastT=0;
+renderer.setAnimationLoop(time=>{
+  const dt=Math.min((time-lastT)/1000,.05);
+  lastT=time;
+
+  /* Raycasting */
+  raycaster.setFromCamera(mouse,camera);
+  const hits=raycaster.intersectObjects(hitTargets);
+  if(hits.length){
+    const r=hits[0].object.userData;
+    if(hoveredReg!==r){
+      hoveredReg=r;
+      tipTitle.textContent=r.name;
+      tipInfo.textContent=r.info;
+      tipTag.textContent=r.tag;
+      tipDot.style.background=r.color;
+      tipDot.style.boxShadow=`0 0 8px ${r.color}`;
+      tooltip.classList.remove('hidden');
+    }
+  } else { hoveredReg=null; tooltip.classList.add('hidden'); }
+
+  /* Spontaneous firing */
+  const fp=CFG.FIRE_PROB*fireIntensity;
+  for(let i=0;i<CFG.N;i++) if(Math.random()<fp) fireNeuron(i,0.65+Math.random()*.35);
+
+  /* Decay + soma color update */
+  let activeN=0;
+  for(let i=0;i<CFG.N;i++){
+    neurons[i].activity*=CFG.DECAY;
+    if(neurons[i].activity<0.003) neurons[i].activity=0;
+    else activeN++;
+    const a=neurons[i].activity;
+    if(a<0.001)       _tc.copy(pal.resting);
+    else if(a<0.4)    _tc.lerpColors(pal.resting, pal.active,  a/0.4);
+    else if(a<0.75)   _tc.lerpColors(pal.active,  pal.firing,  (a-.4)/.35);
+    else              _tc.lerpColors(pal.firing,   pal.peak,    (a-.75)/.25);
+    somaMesh.setColorAt(i,_tc);
+  }
+  somaMesh.instanceColor.needsUpdate=true;
+
+  /* Axon color update */
+  for(let a=0;a<axonList.length;a++){
+    const ax=axonList[a];
+    const aMax=Math.max(neurons[ax.from].activity, neurons[ax.to].activity);
+    const base=a*CFG.ASEGS*2;
+    if(aMax>0.01){
+      _tc.lerpColors(pal.axon, pal.axonAct, aMax);
+      for(let s=0;s<CFG.ASEGS;s++){
+        const vi=(base+s*2)*3;
+        axColArr[vi]=_tc.r;   axColArr[vi+1]=_tc.g;   axColArr[vi+2]=_tc.b;
+        axColArr[vi+3]=_tc.r; axColArr[vi+4]=_tc.g;   axColArr[vi+5]=_tc.b;
+      }
+    } else if(aMax===0 && axColArr[base*3]!==pal.axon.r){
+      for(let s=0;s<CFG.ASEGS;s++){
+        const vi=(base+s*2)*3;
+        axColArr[vi]=pal.axon.r;   axColArr[vi+1]=pal.axon.g;   axColArr[vi+2]=pal.axon.b;
+        axColArr[vi+3]=pal.axon.r; axColArr[vi+4]=pal.axon.g;   axColArr[vi+5]=pal.axon.b;
+      }
+    }
+  }
+  axGeo.attributes.color.needsUpdate=true;
+
+  /* Signal pulses */
+  for(let pi=pulses.length-1;pi>=0;pi--){
+    const p=pulses[pi];
+    p.prog+=dt*p.spd;
+    if(p.prog>=1.0){
+      fireNeuron(p.tgt, p.str);
+      pulses.splice(pi,1);
+      pulPosArr[pi*3+1]=-9999;
+      continue;
+    }
+    const t=p.fwd?p.prog:1-p.prog;
+    const pts=p.ax.pts;
+    const sf=t*(pts.length-1);
+    const si=Math.min(Math.floor(sf),pts.length-2);
+    const st=sf-si;
+    const pa=pts[si],pb=pts[si+1];
+    pulPosArr[pi*3]  =pa.x+(pb.x-pa.x)*st;
+    pulPosArr[pi*3+1]=pa.y+(pb.y-pa.y)*st;
+    pulPosArr[pi*3+2]=pa.z+(pb.z-pa.z)*st;
+    const fade=Math.sin(p.prog*Math.PI);
+    const pc=pal.pulse;
+    pulColArr[pi*3]=pc.r*fade; pulColArr[pi*3+1]=pc.g*fade; pulColArr[pi*3+2]=pc.b*fade;
+  }
+  for(let pi=pulses.length;pi<CFG.MAX_P;pi++) pulPosArr[pi*3+1]=-9999;
+  pulGeo.attributes.position.needsUpdate=true;
+  pulGeo.attributes.color.needsUpdate=true;
+
+  /* Brain slow drift */
+  if(!isFly) brainGroup.rotation.y+=dt*0.035;
+
+  /* Fly-through */
+  if(isFly){
+    flyT+=dt*0.038;
+    if(flyT>=1){ isFly=false; controls.autoRotate=true; btnFly.textContent='🎥 Fly-Through'; btnFly.classList.remove('active'); }
+    else { camera.position.lerp(flyCurve.getPoint(flyT),.03); camera.lookAt(0,0,0); }
+  }
+
+  /* Animated key light orbit */
+  kL.position.x=Math.sin(time*.00045)*5.5;
+  kL.position.z=Math.cos(time*.00045)*5.5;
+
+  /* Stats (every ~60 frames) */
+  fireTimer+=dt;
+  if(fireTimer>=1){ 
+    document.getElementById('stat-fps').textContent=fireCount;
+    document.getElementById('stat-active').textContent=activeN;
+    fireCount=0; fireTimer=0;
+  }
+
+  controls.update();
+  composer.render();
+});
+
+/* ══════════════════════════════════
+   RESIZE
+══════════════════════════════════ */
+window.addEventListener('resize',()=>{
+  camera.aspect=W()/H();
+  camera.updateProjectionMatrix();
+  renderer.setSize(W(),H());
+  composer.setSize(W(),H());
+  bloom.setSize(W(),H());
+});
+
+/* ══════════════════════════════════
+   INIT  COMPLETE
+══════════════════════════════════ */
+document.getElementById('stat-neurons').textContent = CFG.N.toLocaleString();
+console.log(`NeuroViz ready — ${CFG.N} neurons, ${axonList.length} axons`);
+
+setTimeout(()=>{
+  const ld=document.getElementById('loading');
+  ld.classList.add('done');
+  setTimeout(()=>ld.remove(), 900);
+}, 2100);
+
+</script>
+</body>
+</html>
